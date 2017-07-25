@@ -5,6 +5,7 @@ import io.reactivex.Completable
 import io.reactivex.Flowable
 import io.reactivex.Single
 import io.reactivex.exceptions.Exceptions
+import io.reactivex.flowables.ConnectableFlowable
 import io.reactivex.schedulers.Schedulers
 import okio.ByteString
 import java.net.DatagramPacket
@@ -28,11 +29,7 @@ class MulticastDiscovery(
 ) {
 
     val multicastPacket: DatagramPacket by lazy { buildMulticastPacket(discoveryRequest) }
-    private val request: ByteString
-
-    init {
-        request = discoveryRequest.data
-    }
+    private val request: ByteString = discoveryRequest.data
 
     /**
      * This will create broadcasting out and listening for `ssdpMessage.mx` seconds past the last broadcast.
@@ -47,8 +44,10 @@ class MulticastDiscovery(
                 }, { sockets ->
                     val sender = createSender(sockets.map { it.socket })
                     val receivers = sockets.map { createReceiver(it.socket) }
+                    val merged1 = Flowable.merge(receivers)
                     bind(sockets)
-                            .andThen(Flowable.merge(receivers).mergeWith(sender.toFlowable()))
+                            .andThen(Flowable.merge(merged1, sender.doOnSubscribe { sender.connect() }))
+                            .takeUntil(sender.delay(discoveryRequest.timeout.toLong(), TimeUnit.SECONDS))
                 }, {
                     it.forEach { it.socket.closeQuietly() }
                 })
@@ -101,7 +100,6 @@ class MulticastDiscovery(
         return Flowable
                 .create<MulticastDiscoveryResponse>({
                     val receivePacket = DatagramPacket(receiveData, receiveData.size)
-
                     while (!it.isCancelled) {
                         try {
                             socket.receive(receivePacket)
@@ -131,12 +129,12 @@ class MulticastDiscovery(
      * Create a Observable that will send the SSDP Message over the sockets we have bound. This will fire the broadcast
      * 3 times at random intervals no more than 1/2 the timeout value of the SSDP message.
      */
-    internal fun createSender(sockets: List<DatagramSocket>): Completable {
+    internal fun createSender(sockets: List<DatagramSocket>): ConnectableFlowable<MulticastDiscoveryResponse> {
         val sendMessage = Completable.fromAction {
             sockets.forEach {
                 try {
                     it.send(multicastPacket)
-                    info("Sent multicast packet:\n\r$request")
+                    info("Sent multicast packet: $request")
                     info("Sent multicast packet from ${it.localAddress}")
                 } catch (ex: SocketException) {
                     warn("Socket closed, aborting datagram send to: ${multicastPacket.address}")
@@ -159,9 +157,10 @@ class MulticastDiscovery(
             }
             e.onComplete()
         }, BackpressureStrategy.BUFFER)
-                .publish()
                 .flatMapCompletable { sendMessage }
                 .subscribeOn(Schedulers.io())
+                .toFlowable<MulticastDiscoveryResponse>()
+                .publish()
     }
 
     fun DatagramSocket.closeQuietly() {
