@@ -3,7 +3,6 @@ package kupnp
 import io.reactivex.BackpressureStrategy
 import io.reactivex.Completable
 import io.reactivex.Flowable
-import io.reactivex.Single
 import io.reactivex.exceptions.Exceptions
 import io.reactivex.flowables.ConnectableFlowable
 import io.reactivex.schedulers.Schedulers
@@ -44,9 +43,8 @@ class MulticastDiscovery(
                 }, { sockets ->
                     val sender = createSender(sockets.map { it.socket })
                     val receivers = sockets.map { createReceiver(it.socket) }
-                    val merged1 = Flowable.merge(receivers)
                     bind(sockets)
-                            .andThen(Flowable.merge(merged1, sender.doOnSubscribe { sender.connect() }))
+                            .andThen(Flowable.merge(receivers).mergeWith(sender.doOnSubscribe { sender.connect() }))
                             .takeUntil(sender.delay(discoveryRequest.timeout.toLong(), TimeUnit.SECONDS))
                 }, {
                     it.forEach { it.socket.closeQuietly() }
@@ -147,16 +145,9 @@ class MulticastDiscovery(
             }
         }
 
-        return Flowable.create<Single<Long>>({ e ->
-            val r = Random()
-            // Fire first message straight away
-            e.onNext(Single.just(0L))
-            for (i in 0..1) {
-                val rand = 200 + r.nextInt(discoveryRequest.timeout * 1000)
-                e.onNext(Single.timer(rand.toLong(), TimeUnit.MILLISECONDS))
-            }
-            e.onComplete()
-        }, BackpressureStrategy.BUFFER)
+        val r = Random()
+        return Flowable.range(0, 3)
+                .concatMap { Flowable.timer(if (it == 0) 0 else 200L + r.nextInt(discoveryRequest.timeout * 1000), TimeUnit.MILLISECONDS) }
                 .flatMapCompletable { sendMessage }
                 .subscribeOn(Schedulers.io())
                 .toFlowable<MulticastDiscoveryResponse>()
