@@ -1,14 +1,14 @@
 package kupnp
 
+import io.reactivex.Flowable
 import kupnp.MulticastDiscovery.MulticastDiscoveryRequest
-import rx.Observable
 
 /**
  * Created by chris on 12/10/2016.
  */
 object WsDiscoveryService {
 
-    fun search(wsDiscoveryMessage: WsDiscoveryMessage = WsDiscoveryMessage()): Observable<WsDiscoveryResponse> {
+    fun search(wsDiscoveryMessage: WsDiscoveryMessage = WsDiscoveryMessage()): Flowable<WsDiscoveryResponse> {
         val request = MulticastDiscoveryRequest(
                 data = wsDiscoveryMessage.byteString(),
                 multicastAddress = WsDiscoveryMessage.DEFAULT_IP_ADDRESS,
@@ -18,8 +18,7 @@ object WsDiscoveryService {
         )
         return MulticastDiscovery(request)
                 .create()
-                .map { WsDiscoveryResponse.parseResponse(it.data, it.address) }
-                .filter { it != null }
+                .flatMapMaybe { WsDiscoveryResponse.parseResponse(it.data, it.address) }
                 .cast(WsDiscoveryResponse::class.java)
                 .distinct()
     }

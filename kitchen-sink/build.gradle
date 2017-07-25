@@ -9,10 +9,5 @@ sourceSets {
 }
 
 dependencies {
-    compile "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
-
-    compile "com.squareup.okio:okio:$okioVersion"
-    compile "io.reactivex:rxjava:$rxjavaVersion"
-
-    testCompile group: 'junit', name: 'junit', version: junitVersion
+    compile "org.jetbrains.kotlin:kotlin-stdlib-jre7:$kotlin_version"
 }

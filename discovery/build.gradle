@@ -9,9 +9,11 @@ sourceSets {
 sourceCompatibility = 1.7
 
 dependencies {
+    compile "org.jetbrains.kotlin:kotlin-stdlib-jre7:$kotlin_version"
+
     compile project(':kitchen-sink')
 
-    testCompile group: 'junit', name: 'junit', version: junitVersion
+    compile "io.reactivex.rxjava2:rxjava:$rxjavaVersion"
+    compile "com.squareup.okio:okio:$okioVersion"
     testCompile "com.google.truth:truth:$truthVersion"
-
 }
