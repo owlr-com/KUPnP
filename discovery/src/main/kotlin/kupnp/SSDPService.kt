@@ -1,6 +1,7 @@
 package kupnp
 
-import rx.Observable
+import io.reactivex.Flowable
+
 
 /**
  * Created by chris on 16/04/2016.
@@ -13,7 +14,7 @@ object SSDPService {
      *
      * @param message defaults to search for everything, can pass in you're own search message. Not-Null.
      */
-    fun msearch(message: SsdpMessage = SsdpMessage.search()): Observable<SsdpMessage> {
+    fun msearch(message: SsdpMessage = SsdpMessage.search()): Flowable<SsdpMessage> {
         val request = MulticastDiscovery.MulticastDiscoveryRequest(
                 data = message.byteString(),
                 multicastAddress = SsdpMessage.DEFAULT_IP_ADDRESS,

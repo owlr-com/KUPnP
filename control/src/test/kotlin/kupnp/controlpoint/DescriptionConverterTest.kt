@@ -21,7 +21,7 @@ class DescriptionConverterTest {
         val gateway = Okio.buffer(Okio.source(File(resourceDir, "gateway.xml").toPath())).readUtf8()
         server.enqueue(MockResponse().setBody(gateway))
 
-        val result = service.getDeviceDescription("/gateway.xml").toBlocking().single()
+        val result = service.getDeviceDescription("/gateway.xml").blockingGet()
         val expected = DeviceDescription(
                 SpecVersion(1, 0),
                 Device(
@@ -90,7 +90,7 @@ class DescriptionConverterTest {
         val gateway = Okio.buffer(Okio.source(File(resourceDir, "service_description_simple.xml").toPath())).readUtf8()
         server.enqueue(MockResponse().setBody(gateway))
 
-        val result = service.getServiceDescription("/service_description_simple.xml").toBlocking().single()
+        val result = service.getServiceDescription("/service_description_simple.xml").blockingGet()
         val expected = ServiceDescription(
                 SpecVersion(1, 0),
                 listOf(
@@ -128,7 +128,7 @@ class DescriptionConverterTest {
         val gateway = Okio.buffer(Okio.source(File(resourceDir, "service_description.xml").toPath())).readUtf8()
         server.enqueue(MockResponse().setBody(gateway))
 
-        val result = service.getServiceDescription("/service_description.xml").toBlocking().single()
+        val result = service.getServiceDescription("/service_description.xml").blockingGet()
 
         assertThat(result).isNotNull()
         assertThat(result.actionList).hasSize(11)

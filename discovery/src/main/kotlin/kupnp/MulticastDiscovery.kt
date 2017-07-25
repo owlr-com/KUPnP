@@ -1,21 +1,31 @@
 package kupnp
 
+import io.reactivex.BackpressureStrategy
+import io.reactivex.Completable
+import io.reactivex.Flowable
+import io.reactivex.Single
+import io.reactivex.exceptions.Exceptions
+import io.reactivex.schedulers.Schedulers
 import okio.ByteString
-import rx.Emitter
-import rx.Observable
-import rx.Observable.*
-import rx.exceptions.Exceptions
-import rx.observables.ConnectableObservable
-import rx.schedulers.Schedulers
-import java.net.*
-import java.util.*
+import java.net.DatagramPacket
+import java.net.DatagramSocket
+import java.net.Inet4Address
+import java.net.InetAddress
+import java.net.InetSocketAddress
+import java.net.MulticastSocket
+import java.net.NetworkInterface
+import java.net.SocketException
+import java.net.SocketTimeoutException
+import java.util.Random
 import java.util.concurrent.TimeUnit
 
 /**
  * Created by chris on 16/04/2016.
  * For project kupnp
  */
-class MulticastDiscovery(private val discoveryRequest: MulticastDiscoveryRequest) {
+class MulticastDiscovery(
+        private val discoveryRequest: MulticastDiscoveryRequest
+) {
 
     val multicastPacket: DatagramPacket by lazy { buildMulticastPacket(discoveryRequest) }
     private val request: ByteString
@@ -30,16 +40,15 @@ class MulticastDiscovery(private val discoveryRequest: MulticastDiscoveryRequest
      *
      * Make sure to subscribe to this off the UI thread as this will create sockets and do network calls.
      */
-    fun create(): Observable<MulticastDiscoveryResponse> {
-        return Observable
+    fun create(): Flowable<MulticastDiscoveryResponse> {
+        return Flowable
                 .using({
                     createSockets()
                 }, { sockets ->
                     val sender = createSender(sockets.map { it.socket })
                     val receivers = sockets.map { createReceiver(it.socket) }
                     bind(sockets)
-                            .flatMap { merge(receivers).mergeWith(sender.doOnSubscribe { sender.connect() }) }
-                            .takeUntil(sender.defaultIfEmpty(null).delay(discoveryRequest.timeout.toLong(), TimeUnit.SECONDS))
+                            .andThen(Flowable.merge(receivers).mergeWith(sender.toFlowable()))
                 }, {
                     it.forEach { it.socket.closeQuietly() }
                 })
@@ -60,38 +69,40 @@ class MulticastDiscovery(private val discoveryRequest: MulticastDiscoveryRequest
     internal fun createSockets(): List<AddressAndSocket> {
         data class AddressAndInterface(val address: InetAddress, val networkInterface: NetworkInterface)
 
-        val localAddresss = NetworkInterface.getNetworkInterfaces().toList()
+        val localAddress = NetworkInterface.getNetworkInterfaces().toList()
                 .filter { it.isUp && !it.isLoopback }
-                .map { inter ->
-                    inter.inetAddresses.toList().map { AddressAndInterface(it, inter) }
+                .flatMap { inter ->
+                    inter.inetAddresses
+                            .toList()
+                            .map { AddressAndInterface(it, inter) }
                 }
-                .flatMap { it }
                 .filter { it.address is Inet4Address }
                 .filter { it.address.isSiteLocalAddress }
 
         // Create a new Socket for each Address, most devices are multi-honed these days.
-        return localAddresss.map { AddressAndSocket(it.address, MulticastSocket(null)) }
+        return localAddress.map { AddressAndSocket(it.address, MulticastSocket(null)) }
     }
 
-    internal fun bind(sockets: List<AddressAndSocket>): Observable<Unit> {
-        return Observable.fromCallable {
+    internal fun bind(sockets: List<AddressAndSocket>): Completable {
+        return Completable.fromAction {
             sockets.forEach {
                 info("Creating bound socket (for datagram input/output) on: ${it.address}")
                 it.socket.bind(InetSocketAddress(it.address, 0))
             }
-            return@fromCallable null
         }
     }
 
     /**
      * Subscribes on a different thread and will keep listening until you unsubscribe
      */
-    internal fun createReceiver(socket: DatagramSocket): Observable<MulticastDiscoveryResponse> {
+    internal fun createReceiver(socket: DatagramSocket): Flowable<MulticastDiscoveryResponse> {
         val receiveData = ByteArray(discoveryRequest.responseSize)
-        return Observable
-                .create<MulticastDiscoveryResponse> {
+
+        return Flowable
+                .create<MulticastDiscoveryResponse>({
                     val receivePacket = DatagramPacket(receiveData, receiveData.size)
-                    while (!it.isUnsubscribed) {
+
+                    while (!it.isCancelled) {
                         try {
                             socket.receive(receivePacket)
                             it.onNext(MulticastDiscoveryResponse(
@@ -101,63 +112,56 @@ class MulticastDiscovery(private val discoveryRequest: MulticastDiscoveryRequest
                             // Reset packet size
                             receivePacket.length = receiveData.size
                         } catch (se: SocketException) {
-                            it.onCompleted()
+                            it.onComplete()
                             break
                         } catch(se: SocketTimeoutException) {
-                            it.onCompleted()
+                            it.onComplete()
                             break
                         } catch (e: Exception) {
-                            Exceptions.throwOrReport(e, it)
+                            Exceptions.throwIfFatal(e)
+                            it.onError(e)
                         }
                     }
                     socket.closeQuietly()
-                }
-                .onBackpressureBuffer()
+                }, BackpressureStrategy.BUFFER)
                 .subscribeOn(Schedulers.newThread())
     }
 
     /**
      * Create a Observable that will send the SSDP Message over the sockets we have bound. This will fire the broadcast
      * 3 times at random intervals no more than 1/2 the timeout value of the SSDP message.
-     *
-     * This doesn't emmit anything it ignores the outputs then just completes
      */
-    internal fun createSender(sockets: List<DatagramSocket>): ConnectableObservable<MulticastDiscoveryResponse> {
-        val sendMessage = Observable
-                .fromCallable {
-                    sockets.forEach {
-                        try {
-                            it.send(multicastPacket)
-                            info("Sent multicast packet:\n\r$request")
-                            info("Sent multicast packet from ${it.localAddress}")
-                        } catch (ex: SocketException) {
-                            warn("Socket closed, aborting datagram send to: ${multicastPacket.address}")
-                        } catch (ex: RuntimeException) {
-                            warn("Runtime Exception sending datagram: ${ex.message}")
-                            throw ex
-                        } catch (ex: Exception) {
-                            warn("Exception sending datagram to: ${multicastPacket.address}: ${ex.message}")
-                        }
-                    }
-                    return@fromCallable null
+    internal fun createSender(sockets: List<DatagramSocket>): Completable {
+        val sendMessage = Completable.fromAction {
+            sockets.forEach {
+                try {
+                    it.send(multicastPacket)
+                    info("Sent multicast packet:\n\r$request")
+                    info("Sent multicast packet from ${it.localAddress}")
+                } catch (ex: SocketException) {
+                    warn("Socket closed, aborting datagram send to: ${multicastPacket.address}")
+                } catch (ex: RuntimeException) {
+                    warn("Runtime Exception sending datagram: ${ex.message}")
+                    throw ex
+                } catch (ex: Exception) {
+                    warn("Exception sending datagram to: ${multicastPacket.address}: ${ex.message}")
                 }
+            }
+        }
 
-        return concat(
-                create<Observable<Long>>({ e ->
-                    val r = Random()
-                    // Fire first message straight away
-                    e.onNext(Observable.just(0L))
-                    for (i in 0..1) {
-                        val rand = 200 + r.nextInt(discoveryRequest.timeout * 1000)
-                        e.onNext(Observable.timer(rand.toLong(), TimeUnit.MILLISECONDS))
-                    }
-                    e.onCompleted()
-                }, Emitter.BackpressureMode.BUFFER))
-                .flatMap { sendMessage }
-                .subscribeOn(Schedulers.io())
-                .ignoreElements()
-                .cast(MulticastDiscoveryResponse::class.java)
+        return Flowable.create<Single<Long>>({ e ->
+            val r = Random()
+            // Fire first message straight away
+            e.onNext(Single.just(0L))
+            for (i in 0..1) {
+                val rand = 200 + r.nextInt(discoveryRequest.timeout * 1000)
+                e.onNext(Single.timer(rand.toLong(), TimeUnit.MILLISECONDS))
+            }
+            e.onComplete()
+        }, BackpressureStrategy.BUFFER)
                 .publish()
+                .flatMapCompletable { sendMessage }
+                .subscribeOn(Schedulers.io())
     }
 
     fun DatagramSocket.closeQuietly() {

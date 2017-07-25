@@ -1,42 +1,37 @@
 package kupnp
 
+import io.reactivex.Flowable
+import io.reactivex.Maybe
+import io.reactivex.schedulers.Schedulers
 import kupnp.controlpoint.DeviceDescription
 import kupnp.controlpoint.ServiceDescription
 import kupnp.controlpoint.getDeviceService
 import okhttp3.HttpUrl
-import rx.Observable
-import rx.Observable.merge
-import rx.schedulers.Schedulers
-import rx.subscriptions.CompositeSubscription
-
-var subs = CompositeSubscription()
+import java.util.Scanner
 
 fun main(args: Array<String>) {
 
     info("Starting search")
 
     val ssdp = SSDPService.msearch()
-            .flatMap {
+            .flatMapMaybe {
                 val location = it.headers[SsdpMessage.HEADER_LOCATION] ?: ""
-                val url = HttpUrl.parse(location)?.newBuilder()?.encodedPath("/")?.build() ?: return@flatMap Observable.empty<ServiceDescription>()
+                val url = HttpUrl.parse(location)?.newBuilder()?.encodedPath("/")?.build() ?: return@flatMapMaybe Maybe.empty<ServiceDescription>()
                 //debug("SearchLocation: $location")
-                getDeviceService(url).getDeviceDescription(location).onExceptionResumeNext(Observable.empty<DeviceDescription>())
+                getDeviceService(url).getDeviceDescription(location).onExceptionResumeNext(Maybe.empty<DeviceDescription>())
             }
             .doOnNext { debug("DeviceDescription: $it") }
-            .doOnCompleted { info("Completed SSDP Discovery") }
+            .doOnComplete { info("Completed SSDP Discovery") }
             .subscribeOn(Schedulers.io())
+
     val search = WsDiscoveryMessage().apply { addType("NetworkVideoTransmitter") }
     val ws = WsDiscoveryService.search(search)
             .doOnNext { debug("WSSearch Result: ${it.packetAddress} ${it.hardware}") }
-            .doOnCompleted { info("Completed WS-Discovery") }
+            .doOnComplete { info("Completed WS-Discovery") }
             .subscribeOn(Schedulers.io())
 
-    val sub = merge(ssdp, ws).subscribe({}, { it.printStackTrace() })
+    Flowable.merge(ssdp, ws).subscribe({}, { it.printStackTrace() })
 //    val sub = ws.subscribe({}, { it.printStackTrace() })
-
-    while (!sub.isUnsubscribed) {
-        Thread.sleep(500L)
-    }
-
+    Scanner(System.`in`).nextLine()
 }
 

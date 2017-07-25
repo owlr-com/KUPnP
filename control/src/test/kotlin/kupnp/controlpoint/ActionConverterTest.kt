@@ -68,7 +68,7 @@ class ActionConverterTest {
         val actionName = ActionName("MyActionName", "MyServiceType", "1")
         val request = ActionRequest(ActionBody(actionName))
 
-        service.postActionCommand("/", "${actionName.namespaceReference}#${actionName.actionName}", request).toBlocking().single()
+        service.postActionCommand("/", "${actionName.namespaceReference}#${actionName.actionName}", request).blockingGet()
         val serverRequest = server.takeRequest()
 
         val expected = """<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope"><s:Body><u:MyActionName xmlns:u="urn:schemas-upnp-org:service:MyServiceType:1"/></s:Body></s:Envelope>"""
@@ -84,7 +84,7 @@ class ActionConverterTest {
                 arguments = mapOf("NewConnectionType" to "SomethingElse", "NewRemoteHost" to "192.168.1.1")
         )
 
-        service.postActionCommand("/", "${actionName.namespaceReference}#${actionName.actionName}", ActionRequest(ActionBody(actionName))).toBlocking().single()
+        service.postActionCommand("/", "${actionName.namespaceReference}#${actionName.actionName}", ActionRequest(ActionBody(actionName))).blockingGet()
         val serverRequest = server.takeRequest()
 
         val expected = """<s:Envelope s:encodingStyle="http://schemas.xmlsoap.org/soap/encoding/" xmlns:s="http://schemas.xmlsoap.org/soap/envelope"><s:Body><u:MyActionName xmlns:u="urn:schemas-upnp-org:service:MyServiceType:1"><NewConnectionType>SomethingElse</NewConnectionType><NewRemoteHost>192.168.1.1</NewRemoteHost></u:MyActionName></s:Body></s:Envelope>"""
@@ -99,7 +99,7 @@ class ActionConverterTest {
 
         val actionName = ActionName("GetConnectionTypeInfoResponse", "WANIPConnection", "1")
 
-        val response = service.postActionCommand("/", "${actionName.namespaceReference}#${actionName.actionName}", ActionRequest(ActionBody(actionName))).toBlocking().single()
+        val response = service.postActionCommand("/", "${actionName.namespaceReference}#${actionName.actionName}", ActionRequest(ActionBody(actionName))).blockingGet()
 
         assertThat(response.body).isEqualTo(ActionBody(ActionName("GetConnectionTypeInfo", "WANIPConnection", "1", mapOf(
                 "NewConnectionType" to "IP_Routed",
@@ -115,11 +115,11 @@ class ActionConverterTest {
         val actionName = ActionName("GetConnectionTypeInfoResponse", "WANIPConnection", "1")
 
         try {
-            val response = service.postActionCommand("/", "${actionName.namespaceReference}#${actionName.actionName}", ActionRequest(ActionBody(actionName))).toBlocking().single()
+            val response = service.postActionCommand("/", "${actionName.namespaceReference}#${actionName.actionName}", ActionRequest(ActionBody(actionName))).blockingGet()
             fail("Should of thrown HttpException")
         } catch (e: Exception) {
-            assertThat(e.cause).isInstanceOf(HttpException::class.java)
-            val httpEx = e.cause as HttpException
+            assertThat(e).isInstanceOf(HttpException::class.java)
+            val httpEx = e as HttpException
 
             val errorBody = getRetrofit(server.url("/"))
                     .responseBodyConverter<ActionFault>(ActionFault::class.java, arrayOf<Annotation>())
