@@ -1,5 +1,6 @@
 package kupnp
 
+import io.reactivex.Maybe
 import okio.ByteString
 import java.net.InetAddress
 import java.util.*
@@ -76,19 +77,24 @@ internal constructor(
         /**
          * @return Populated Response, null if can't parse response
          */
-        fun parseResponse(byteString: ByteString, packetAddress: InetAddress? = null): WsDiscoveryResponse? {
+        fun parseResponse(byteString: ByteString, packetAddress: InetAddress? = null): Maybe<WsDiscoveryResponse> {
             val resStr = byteString.utf8()
 
-            val message = REGEX_MESSAGE_ID.find(resStr)?.groupValues?.getOrNull(2) ?: return null
-            val address = REGEX_ADDRESS_ID.find(resStr)?.groupValues?.getOrNull(2) ?: return null
+            val message = REGEX_MESSAGE_ID.find(resStr)?.groupValues?.getOrNull(2) ?: return Maybe.empty()
+            val address = REGEX_ADDRESS_ID.find(resStr)?.groupValues?.getOrNull(2) ?: return Maybe.empty()
 
-            return WsDiscoveryResponse(
-                    messageId = uuidFromString(message) ?: return null,
-                    addressId = uuidFromString(address) ?: return null,
-                    xaddrs = getWhiteSpaceSplit(REGEX_XADDRS, resStr) ?: return null,
-                    scopes = getWhiteSpaceSplit(REGEX_SCOPES, resStr) ?: return null,
+            val messageId = uuidFromString(message) ?: return Maybe.empty()
+            val addressId = uuidFromString(address) ?: return Maybe.empty()
+            val xaddrs = getWhiteSpaceSplit(REGEX_XADDRS, resStr) ?: return Maybe.empty()
+            val scopes = getWhiteSpaceSplit(REGEX_SCOPES, resStr) ?: return Maybe.empty()
+
+            return Maybe.just(WsDiscoveryResponse(
+                    messageId = messageId,
+                    addressId = addressId,
+                    xaddrs = xaddrs,
+                    scopes = scopes,
                     packetAddress = packetAddress
-            )
+            ))
         }
 
         /**

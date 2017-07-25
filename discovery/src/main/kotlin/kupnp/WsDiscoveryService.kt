@@ -18,7 +18,7 @@ object WsDiscoveryService {
         )
         return MulticastDiscovery(request)
                 .create()
-                .map { WsDiscoveryResponse.parseResponse(it.data, it.address) }
+                .flatMapMaybe { WsDiscoveryResponse.parseResponse(it.data, it.address) }
                 .cast(WsDiscoveryResponse::class.java)
                 .distinct()
     }
