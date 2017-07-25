@@ -69,9 +69,7 @@ class MulticastDiscovery(
         val localAddress = NetworkInterface.getNetworkInterfaces().toList()
                 .filter { it.isUp && !it.isLoopback }
                 .flatMap { inter ->
-                    inter.inetAddresses
-                            .toList()
-                            .map { AddressAndInterface(it, inter) }
+                    inter.inetAddresses.toList().map { AddressAndInterface(it, inter) }
                 }
                 .filter { it.address is Inet4Address }
                 .filter { it.address.isSiteLocalAddress }
