@@ -1,7 +1,7 @@
 package kupnp.controlpoint
 
-import io.reactivex.Maybe
 import io.reactivex.Scheduler
+import io.reactivex.Single
 import io.reactivex.schedulers.Schedulers
 import okhttp3.HttpUrl
 import retrofit2.Retrofit
@@ -24,12 +24,12 @@ interface DeviceService {
     @GET
     fun getDeviceDescription(
             @Url path: String
-    ): Maybe<DeviceDescription>
+    ): Single<DeviceDescription>
 
     @GET
     fun getServiceDescription(
             @Url path: String
-    ): Maybe<ServiceDescription>
+    ): Single<ServiceDescription>
 
     /**
      * Ask a set/get from a control point. These are discovered using `getDeviceDescription` and `getServiceDescription`
@@ -44,7 +44,7 @@ interface DeviceService {
             @Url controlURL: String,
             @Header("SOAPACTION") soapHeader: String,
             @Body actionRequest: ActionRequest
-    ): Maybe<ActionResponse>
+    ): Single<ActionResponse>
 }
 
 /**
